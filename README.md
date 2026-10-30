@@ -164,6 +164,56 @@ Open that URL on the phone and accept Microsoft's one-time developer-tunnel warn
 
 Treat the URL as publicly discoverable. Stop phone mode when testing is finished. Tunnel transport is anonymous by design so Keycloak can complete browser redirects; the restricted same-origin proxy exposes only the `household` realm sign-in/resources paths.
 
+## CI and releases
+
+The root [Directory.Build.props](Directory.Build.props) defines the shared .NET product version for all five projects, including the AppHost and tests. Semantic-release updates its single `Version` property automatically; do not manually bump it or duplicate version properties in individual project files. The SDK derives assembly and file versions from it and retains normal source-revision metadata in informational versions.
+
+Compiler/analyzer and NuGet warnings are errors in both Debug and Release builds. CI also passes `-warnaserror` during restore and build so warnings from other MSBuild tasks fail the checks. Docker builds copy the shared properties file before restore and inherit the same version and warning policy.
+
+The [CI workflow](.github/workflows/ci.yml) runs on pull requests targeting `main` and pushes to `main`. Its **Build and Test** check restores the required .NET workloads (including `wasm-tools`) and builds the full solution in Release mode, runs the xUnit tests and Python configuration tests, and retains TRX test results for seven days. It does not start Aspire services or require private configuration, Docker, or deployment secrets.
+
+Run the same checks locally with the .NET 10 SDK and Python 3:
+
+```sh
+dotnet workload restore HsaReceipts.slnx
+dotnet restore HsaReceipts.slnx -warnaserror
+dotnet build HsaReceipts.slnx --configuration Release --no-restore -warnaserror
+dotnet test test/HsaReceipts.Tests/HsaReceipts.Tests.csproj --configuration Release --no-build --no-restore --logger trx --results-directory TestResults
+python3 -m unittest discover -s test -v
+```
+
+After all checks pass on a push to `main`, semantic-release analyzes commits since the previous release, updates the shared .NET version and [CHANGELOG.md](CHANGELOG.md), and commits those two files as `chore(release): X.Y.Z [skip ci]`. The `vX.Y.Z` tag points to that release commit, and the GitHub release contains the generated notes. Release jobs are serialized. Pull requests never publish releases, and a failed check blocks publishing.
+
+Use Conventional Commit messages, including the final squash-merge commit:
+
+| Commit | Release |
+| --- | --- |
+| `fix: correct receipt total` | Patch |
+| `perf: reduce receipt query allocations` | Patch |
+| `feat: add receipt filtering` | Minor |
+| A commit with a `BREAKING CHANGE:` footer | Major |
+| `docs:`, `chore:`, or `ci:` alone | None |
+
+For a breaking change, preserve the footer in the squash commit body:
+
+```text
+feat: change receipt export format
+
+BREAKING CHANGE: exported dates now use ISO 8601.
+```
+
+Git tags are the release-version source of truth; each new release synchronizes the shared .NET version and changelog with its tag. The version updater parses the XML and changes only the shared version value, preserving other build settings. This pipeline does not publish packages or container images or deploy the application. GitHub provides source archives automatically; no application binaries are attached. Without an existing release tag, the first release-worthy history produces `v1.0.0`. A CI-only change does not force a release, although earlier unreleased features or fixes can still trigger one.
+
+Before enabling releases, confirm the repository's default branch is `main` and inspect existing `v*` tags. Preserve valid historical release tags; do not recreate or rewrite them. Require **Build and Test** in branch protection, and ensure repository/organization Actions policy and rulesets allow the release identity to push release commits to `main` as well as create tags and releases. The workflow uses `GITHUB_TOKEN` by default, with `contents: write` only on the release job. That token does not automatically bypass required pull requests, status checks, or signed-commit rules; protected branches may need an explicitly approved release-bot exception or a GitHub App token configured in the workflow. Do not disable branch protections to make releases work. No npm token is needed. Issue/PR comments and labels are disabled in the [release configuration](.releaserc.json).
+
+Before the first real release, preview from an up-to-date, trusted `main` checkout with full history and tags, Node.js 24.15 or newer, and an authorized `GITHUB_TOKEN` supplied through your environment:
+
+```sh
+npx --yes --package=semantic-release@25.0.9 --package=@semantic-release/changelog@7.0.0 --package=@semantic-release/exec@7.1.0 --package=@semantic-release/git@11.0.1 semantic-release --dry-run --no-ci
+```
+
+The dry run verifies push permissions and reports the calculated version and notes, but skips release preparation: it does not change the XML or changelog, create a release commit, or publish a tag or release. Do not expose a release token to pull-request code. Release commits include `[skip ci]` to prevent redundant builds, and pushes/releases created with the built-in `GITHUB_TOKEN` do not trigger separate workflows; this pipeline does not depend on those events.
+
 ## Validation status and acceptance checks
 
 Configuration generator tests and AppHost publishing can be validated with:
@@ -171,7 +221,7 @@ Configuration generator tests and AppHost publishing can be validated with:
 ```sh
 python3 -m unittest discover -s test -v
 dotnet test test/HsaReceipts.Tests/HsaReceipts.Tests.csproj -c Release
-dotnet build HsaReceipts.slnx -c Release
+dotnet build HsaReceipts.slnx -c Release -warnaserror
 aspire publish --apphost src/HsaReceipts.AppHost/HsaReceipts.AppHost.csproj --output-path aspire-output --non-interactive
 ```
 
