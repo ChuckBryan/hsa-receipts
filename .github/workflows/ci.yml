@@ -89,9 +89,6 @@ jobs:
         run: >-
           npx --yes
           --package=semantic-release@25.0.9
-          --package=@semantic-release/changelog@7.0.0
-          --package=@semantic-release/exec@7.1.0
-          --package=@semantic-release/git@11.0.1
           semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
