@@ -1,0 +1,433 @@
+@page "/"
+@using System.Globalization
+@inject ReceiptApiClient Api
+@inject OfflineStore OfflineStore
+@inject UserContext UserContext
+
+<PageTitle>Your receipts · Receipt Keep</PageTitle>
+
+@if (loading)
+{
+    <section class="loading-screen" aria-live="polite">
+        <span class="status-dot"></span>
+        <p>Opening your receipt archive…</p>
+    </section>
+}
+else if (!UserContext.HasKnownOnlineSession && !UserContext.IsOffline)
+{
+    <section class="signed-out">
+        <p class="eyebrow">Private household archive</p>
+        <h1>Receipts, ready<br>when you need them.</h1>
+        <p>Sign in to your household account to open the archive or prepare this device for offline use.</p>
+        <a class="button button-arrow" href="/bff/login?returnUrl=%2F">
+            Sign in <span aria-hidden="true">↗</span>
+        </a>
+    </section>
+}
+else if (UserContext.IsOffline && !offlineEnabled)
+{
+    <section class="signed-out">
+        <p class="eyebrow">No connection</p>
+        <h1>This device isn’t<br>prepared for offline use.</h1>
+        <p>Reconnect and sign in, then enable offline access from the receipt list.</p>
+    </section>
+}
+else
+{
+    <section class="dashboard-intro">
+        <div>
+            <p class="eyebrow">Household HSA archive</p>
+            <h1>Receipts, ready<br>when you need them.</h1>
+        </div>
+        <NavLink class="button button-arrow" href="add">
+            Add receipt <span aria-hidden="true">↗</span>
+        </NavLink>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice @(messageIsError ? "notice-error" : "")" role="status">@message</div>
+    }
+
+    <section class="summary-strip" aria-label="Receipt summary">
+        <div class="summary-primary">
+            <span>Saved unreimbursed balance</span>
+            <strong>@Currency(visibleData.OutstandingCents)</strong>
+        </div>
+        <div class="summary-secondary">
+            <span>Current view</span>
+            <strong>@FilteredReceipts.Count</strong>
+            <small>@(FilteredReceipts.Count == 1 ? "receipt" : "receipts")</small>
+        </div>
+        <div class="summary-note">
+            <span class="status-dot @(UserContext.IsOffline ? "status-offline" : "")" aria-hidden="true"></span>
+            @(UserContext.IsOffline
+                ? $"Offline snapshot from {SnapshotTime}"
+                : "Connected to your private archive")
+        </div>
+    </section>
+
+    <section class="offline-bar" aria-label="Offline access">
+        <div>
+            <strong>Offline access</strong>
+            <span>
+                @(offlineEnabled
+                    ? "Metadata and new drafts are stored in this browser profile. Submitted files remain online-only."
+                    : "Enable on a trusted device to view metadata and prepare new receipts without a connection.")
+            </span>
+        </div>
+        @if (UserContext.HasKnownOnlineSession)
+        {
+            <button class="text-button" @onclick="ToggleOfflineAsync">
+                @(offlineEnabled ? "Disable and clear" : "Enable offline access")
+            </button>
+        }
+    </section>
+
+    @if (drafts.Count > 0)
+    {
+        <section class="drafts">
+            <div class="section-title">
+                <div>
+                    <p class="eyebrow">On this device</p>
+                    <h2>Pending receipts</h2>
+                </div>
+                @if (UserContext.HasKnownOnlineSession)
+                {
+                    <button class="button" disabled="@submitting" @onclick="SubmitDraftsAsync">
+                        @(submitting ? "Submitting…" : "Submit pending receipts")
+                    </button>
+                }
+            </div>
+            @foreach (var draft in drafts)
+            {
+                <article class="receipt draft-receipt">
+                    <div class="receipt-main">
+                        <div class="receipt-status"><span class="badge badge-draft"><i></i> Local draft</span></div>
+                        <div class="receipt-identity">
+                            <h3>@draft.Provider</h3>
+                            <p>@draft.Patient <span aria-hidden="true">·</span> @draft.ServiceDate</p>
+                            @if (!string.IsNullOrWhiteSpace(draft.Error))
+                            {
+                                <p class="draft-error">@draft.Error</p>
+                            }
+                        </div>
+                        <strong class="receipt-amount">@draft.Amount.ToString("C", UsCulture)</strong>
+                    </div>
+                    <div class="actions">
+                        <div class="record-links">
+                            <button class="text-button" @onclick="() => DeleteDraftAsync(draft)">Delete draft</button>
+                        </div>
+                        <span class="paid-date">@draft.FileName</span>
+                    </div>
+                </article>
+            }
+        </section>
+    }
+
+    <section class="records">
+        <div class="section-title">
+            <div>
+                <p class="eyebrow">Archive</p>
+                <h2>Household receipts</h2>
+            </div>
+            @if (UserContext.HasKnownOnlineSession)
+            {
+                <a class="utility-link" href="/api/v1/receipts/export.csv">
+                    Export CSV <span aria-hidden="true">↓</span>
+                </a>
+            }
+        </div>
+        <div class="filters">
+            <label class="search-field" for="q">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="6.5"/>
+                    <path d="m16 16 4 4"/>
+                </svg>
+                <span class="sr-only">Search receipts</span>
+                <input id="q" @bind="query" @bind:event="oninput" placeholder="Search provider, patient, or notes">
+            </label>
+            <label class="select-field" for="status">
+                <span class="sr-only">Status</span>
+                <select id="status" @bind="status">
+                    <option value="">All receipts</option>
+                    <option value="open">Unreimbursed</option>
+                    <option value="paid">Reimbursed</option>
+                </select>
+            </label>
+            <button class="filter-button" @onclick="RefreshAsync" disabled="@UserContext.IsOffline">Refresh</button>
+        </div>
+
+        @if (FilteredReceipts.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty-icon" aria-hidden="true">⌁</span>
+                <h3>No receipts found</h3>
+                <p>Add your first receipt or try a broader search.</p>
+                <NavLink class="button" href="add">Add receipt</NavLink>
+            </div>
+        }
+        @foreach (var receipt in FilteredReceipts)
+        {
+            <article class="receipt">
+                <div class="receipt-main">
+                    <div class="receipt-status">
+                        <span class="badge @(receipt.ReimbursedDate is null ? "badge-open" : "badge-paid")">
+                            <i aria-hidden="true"></i>
+                            @(receipt.ReimbursedDate is null ? "Unreimbursed" : "Reimbursed")
+                        </span>
+                    </div>
+                    <div class="receipt-identity">
+                        <h3>@receipt.Provider</h3>
+                        <p>@receipt.Patient <span aria-hidden="true">·</span> @receipt.ServiceDate</p>
+                        @if (!string.IsNullOrWhiteSpace(receipt.Notes))
+                        {
+                            <p class="notes">@receipt.Notes</p>
+                        }
+                    </div>
+                    <strong class="receipt-amount">@Currency(receipt.Cents)</strong>
+                </div>
+                <div class="actions">
+                    <div class="record-links">
+                        @if (UserContext.HasKnownOnlineSession)
+                        {
+                            <a href="@($"/api/v1/receipts/{receipt.Id}/file")">Download <span aria-hidden="true">↓</span></a>
+                            <NavLink href="@($"edit/{receipt.Id}")">Edit details <span aria-hidden="true">↗</span></NavLink>
+                        }
+                    </div>
+                    @if (UserContext.HasKnownOnlineSession)
+                    {
+                        @if (receipt.ReimbursedDate is null)
+                        {
+                            <div class="reimburse-action">
+                                <label>
+                                    <span>Reimbursement date</span>
+                                    <input aria-label="@($"Reimbursement date for {receipt.Provider}")"
+                                           id="@($"reimbursement-{receipt.Id}")"
+                                           type="date"
+                                           value="@GetReimbursementDate(receipt.Id)"
+                                           @onchange="eventArgs => SetReimbursementDate(receipt.Id, eventArgs.Value?.ToString())">
+                                </label>
+                                <button class="small-button" @onclick="() => ReimburseAsync(receipt, false)">Mark reimbursed</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="reimburse-action">
+                                <span class="paid-date">Paid @receipt.ReimbursedDate</span>
+                                <button class="text-button" @onclick="() => ReimburseAsync(receipt, true)">Undo</button>
+                            </div>
+                        }
+                    }
+                </div>
+            </article>
+        }
+    </section>
+}
+
+@code {
+    private static readonly CultureInfo UsCulture = CultureInfo.GetCultureInfo("en-US");
+    private ReceiptListResponse visibleData = new([], 0, DateTimeOffset.UtcNow.ToString("O"));
+    private readonly Dictionary<string, string> reimbursementDates = [];
+    private List<LocalReceiptDraft> drafts = [];
+    private bool loading = true;
+    private bool offlineEnabled;
+    private bool submitting;
+    private string query = "";
+    private string status = "";
+    private string? message;
+    private bool messageIsError;
+
+    private List<ReceiptDto> FilteredReceipts => visibleData.Receipts
+        .Where(receipt =>
+            (string.IsNullOrWhiteSpace(query)
+             || $"{receipt.Provider} {receipt.Patient} {receipt.Notes}"
+                 .Contains(query, StringComparison.OrdinalIgnoreCase))
+            && (status != "open" || receipt.ReimbursedDate is null)
+            && (status != "paid" || receipt.ReimbursedDate is not null))
+        .ToList();
+
+    private string SnapshotTime =>
+        DateTimeOffset.TryParse(visibleData.RefreshedAt, out var value)
+            ? value.ToLocalTime().ToString("g")
+            : "an earlier visit";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await UserContext.InitializeAsync();
+        if (UserContext.UserKey is not null)
+        {
+            offlineEnabled = await OfflineStore.IsOfflineEnabledAsync(UserContext.UserKey);
+            drafts = (await OfflineStore.GetDraftsAsync(UserContext.UserKey)).ToList();
+        }
+
+        if (UserContext.HasKnownOnlineSession)
+        {
+            await RefreshAsync();
+        }
+        else if (UserContext.IsOffline && offlineEnabled && UserContext.UserKey is not null)
+        {
+            visibleData = await OfflineStore.GetReceiptSnapshotAsync(UserContext.UserKey)
+                ?? visibleData;
+        }
+
+        loading = false;
+    }
+
+    private async Task RefreshAsync()
+    {
+        message = null;
+        try
+        {
+            visibleData = await Api.GetReceiptsAsync();
+            if (offlineEnabled && UserContext.UserKey is not null)
+            {
+                await OfflineStore.SaveReceiptSnapshotAsync(UserContext.UserKey, visibleData);
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or SessionExpiredException)
+        {
+            message = exception is SessionExpiredException
+                ? "Your session expired. Sign in again before changing server records."
+                : "The server is unavailable. Showing the most recent local snapshot.";
+            messageIsError = true;
+            if (offlineEnabled && UserContext.UserKey is not null)
+            {
+                visibleData = await OfflineStore.GetReceiptSnapshotAsync(UserContext.UserKey)
+                    ?? visibleData;
+            }
+        }
+    }
+
+    private async Task ToggleOfflineAsync()
+    {
+        if (UserContext.UserKey is null)
+        {
+            return;
+        }
+
+        if (offlineEnabled)
+        {
+            if (drafts.Count > 0
+                && !await OfflineStore.ConfirmAsync(
+                    $"Disabling offline access deletes {drafts.Count} unsent local draft(s). Continue?"))
+            {
+                return;
+            }
+            await OfflineStore.ClearPrivateDataAsync(UserContext.UserKey);
+            offlineEnabled = false;
+            drafts.Clear();
+            return;
+        }
+
+        offlineEnabled = true;
+        await OfflineStore.SetOfflineEnabledAsync(UserContext.UserKey, true);
+        await OfflineStore.SaveReceiptSnapshotAsync(UserContext.UserKey, visibleData);
+        await OfflineStore.RequestPersistentStorageAsync();
+        message = "Offline access is enabled for this browser profile. Local data is not included in NAS backups.";
+        messageIsError = false;
+    }
+
+    private async Task SubmitDraftsAsync()
+    {
+        if (UserContext.UserKey is null || !UserContext.HasKnownOnlineSession)
+        {
+            return;
+        }
+
+        submitting = true;
+        message = null;
+        try
+        {
+            var token = await OfflineStore.GetAntiforgeryTokenAsync();
+            var failures = 0;
+            foreach (var draft in drafts.ToList())
+            {
+                try
+                {
+                    draft.State = "submitting";
+                    draft.Error = null;
+                    await OfflineStore.SaveDraftAsync(UserContext.UserKey, draft, null);
+                    await OfflineStore.SubmitDraftAsync(
+                        UserContext.UserKey,
+                        draft.DraftId,
+                        token);
+                    await OfflineStore.DeleteDraftAsync(UserContext.UserKey, draft.DraftId);
+                    drafts.Remove(draft);
+                }
+                catch (Exception exception)
+                {
+                    failures++;
+                    draft.State = "error";
+                    draft.Error = exception.Message;
+                    try
+                    {
+                        await OfflineStore.SaveDraftAsync(UserContext.UserKey, draft, null);
+                    }
+                    catch (Exception storageException)
+                    {
+                        draft.Error =
+                            $"{draft.Error} The error state could not be saved: {storageException.Message}";
+                    }
+                }
+            }
+
+            await RefreshAsync();
+            message = failures == 0
+                ? "Pending receipts were saved to the server."
+                : $"{failures} draft(s) could not be submitted and remain on this device.";
+            messageIsError = failures > 0;
+        }
+        catch (Exception exception)
+        {
+            message = exception.Message;
+            messageIsError = true;
+        }
+        finally
+        {
+            submitting = false;
+        }
+    }
+
+    private async Task DeleteDraftAsync(LocalReceiptDraft draft)
+    {
+        if (UserContext.UserKey is null
+            || !await OfflineStore.ConfirmAsync(
+                $"Delete the local draft for {draft.Provider}? This cannot be undone."))
+        {
+            return;
+        }
+        await OfflineStore.DeleteDraftAsync(UserContext.UserKey, draft.DraftId);
+        drafts.Remove(draft);
+    }
+
+    private async Task ReimburseAsync(ReceiptDto receipt, bool undo)
+    {
+        try
+        {
+            var date = undo ? null : GetReimbursementDate(receipt.Id);
+            await Api.ReimburseAsync(receipt.Id, new ReimbursementRequest(date, undo));
+            await RefreshAsync();
+        }
+        catch (Exception exception)
+        {
+            message = exception.Message;
+            messageIsError = true;
+        }
+    }
+
+    private string GetReimbursementDate(string id)
+    {
+        if (!reimbursementDates.TryGetValue(id, out var date))
+        {
+            date = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+            reimbursementDates[id] = date;
+        }
+        return date;
+    }
+
+    private void SetReimbursementDate(string id, string? value) =>
+        reimbursementDates[id] = value ?? "";
+
+    private static string Currency(long cents) => (cents / 100m).ToString("C", UsCulture);
+}

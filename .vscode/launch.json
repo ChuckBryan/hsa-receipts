@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Receipt Keep (local Keycloak)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}\\src\\HsaReceipts\\bin\\Debug\\net10.0\\HsaReceipts.dll",
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https://\\S+)"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "https://localhost:7088",
+        "Auth__Authority": "http://localhost:5089/realms/household",
+        "Auth__ClientSecret": "development-only-secret",
+        "Auth__AllowedUsers": "developer",
+        "Auth__RequireHttpsMetadata": "false",
+        "DataPath": "./data/development",
+        "AllowedHosts": "localhost"
+      }
+    }
+  ]
+}

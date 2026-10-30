@@ -1,0 +1,51 @@
+{
+  "realm": "household",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "clients": [
+    {
+      "clientId": "hsa-receipts",
+      "name": "Receipt Keep (Development)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "development-only-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "https://localhost:7088/signin-oidc"
+      ],
+      "webOrigins": [
+        "https://localhost:7088"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://localhost:7088/signout-callback-oidc"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "developer",
+      "enabled": true,
+      "email": "developer@localhost",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Developer",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "developer",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

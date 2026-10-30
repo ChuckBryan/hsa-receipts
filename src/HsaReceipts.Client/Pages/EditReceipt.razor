@@ -1,0 +1,126 @@
+@page "/edit/{Id}"
+@inject ReceiptApiClient Api
+@inject UserContext UserContext
+@inject NavigationManager Navigation
+
+<PageTitle>Edit receipt · Receipt Keep</PageTitle>
+
+@if (loading)
+{
+    <section class="loading-screen"><p>Loading receipt…</p></section>
+}
+else if (model is null)
+{
+    <section class="signed-out"><h1>Receipt not available.</h1><NavLink class="button" href="">Return to receipts</NavLink></section>
+}
+else
+{
+    <div class="form-page">
+        <aside class="form-intro">
+            <NavLink class="back-link" href=""><span aria-hidden="true">←</span> Your receipts</NavLink>
+            <p class="eyebrow">Receipt details</p>
+            <h1>Edit receipt.</h1>
+            <p>Update the record details. The original uploaded file remains attached.</p>
+        </aside>
+        <EditForm Model="model" OnValidSubmit="SaveAsync" class="entry">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="validation" />
+            @if (!string.IsNullOrWhiteSpace(error))
+            {
+                <div class="validation">@error</div>
+            }
+            <div class="field">
+                <label for="provider">Provider</label>
+                <InputText id="provider" @bind-Value="model.Provider" maxlength="160" />
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="patient">Patient</label>
+                    <InputText id="patient" @bind-Value="model.Patient" maxlength="80" />
+                </div>
+                <div class="field">
+                    <label for="serviceDate">Service date</label>
+                    <InputText id="serviceDate" type="date" @bind-Value="model.ServiceDate" />
+                </div>
+            </div>
+            <div class="field">
+                <label for="amount">Amount paid</label>
+                <div class="money-field">
+                    <span>$</span>
+                    <InputNumber id="amount" @bind-Value="model.Amount" step="0.01" min="0.01" max="1000000" />
+                </div>
+            </div>
+            <div class="field">
+                <label for="notes">Notes <span>Optional</span></label>
+                <InputTextArea id="notes" @bind-Value="model.Notes" maxlength="2000" rows="4" />
+            </div>
+            <div class="form-actions">
+                <NavLink class="text-button cancel-link" href="">Cancel</NavLink>
+                <button class="button button-arrow" disabled="@saving">Save changes <span>↗</span></button>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+    private EditReceiptRequest? model;
+    private bool loading = true;
+    private bool saving;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await UserContext.InitializeAsync();
+        if (!UserContext.HasKnownOnlineSession)
+        {
+            error = "Editing saved receipts requires a connection and an active session.";
+            loading = false;
+            return;
+        }
+
+        try
+        {
+            var data = await Api.GetReceiptsAsync();
+            var receipt = data.Receipts.FirstOrDefault(candidate => candidate.Id == Id);
+            if (receipt is not null)
+            {
+                model = new EditReceiptRequest
+                {
+                    Provider = receipt.Provider,
+                    Patient = receipt.Patient,
+                    ServiceDate = receipt.ServiceDate,
+                    Amount = receipt.Cents / 100m,
+                    Notes = receipt.Notes
+                };
+            }
+        }
+        catch (Exception exception)
+        {
+            error = exception.Message;
+        }
+        loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (model is null)
+        {
+            return;
+        }
+        saving = true;
+        try
+        {
+            await Api.EditAsync(Id, model);
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

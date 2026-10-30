@@ -1,0 +1,175 @@
+@page "/add"
+@inject ReceiptApiClient Api
+@inject OfflineStore OfflineStore
+@inject UserContext UserContext
+@inject NavigationManager Navigation
+
+<PageTitle>Add receipt · Receipt Keep</PageTitle>
+
+<div class="form-page">
+    <aside class="form-intro">
+        <NavLink class="back-link" href=""><span aria-hidden="true">←</span> Your receipts</NavLink>
+        <p class="eyebrow">New record</p>
+        <h1>Add a receipt.</h1>
+        <p>Upload the original and capture the details you will need at reimbursement time.</p>
+        <div class="form-assurance">
+            <span class="status-dot" aria-hidden="true"></span>
+            Save to the server now or keep a local draft for later.
+        </div>
+    </aside>
+    <EditForm Model="draft" OnValidSubmit="SaveOnlineAsync" class="entry">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="validation" />
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="validation">@error</div>
+        }
+        <div class="field field-upload">
+            <label>Receipt file</label>
+            <div class="upload-control">
+                <span class="upload-icon" aria-hidden="true">↑</span>
+                <div>
+                    <strong>@(file?.Name ?? "Choose a photo or PDF")</strong>
+                    <small>JPG, PNG, or PDF · 15 MB maximum</small>
+                </div>
+                <InputFile OnChange="SelectFile" accept="image/jpeg,image/png,application/pdf" />
+            </div>
+        </div>
+        <div class="field">
+            <label for="provider">Provider</label>
+            <InputText id="provider" @bind-Value="draft.Provider" placeholder="Doctor, pharmacy, dentist…" maxlength="160" />
+            <ValidationMessage For="() => draft.Provider" />
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label for="patient">Patient</label>
+                <InputText id="patient" @bind-Value="draft.Patient" placeholder="Who was this for?" maxlength="80" />
+                <ValidationMessage For="() => draft.Patient" />
+            </div>
+            <div class="field">
+                <label for="serviceDate">Service date</label>
+                <InputText id="serviceDate" type="date" @bind-Value="draft.ServiceDate" />
+            </div>
+        </div>
+        <div class="field">
+            <label for="amount">Amount paid</label>
+            <div class="money-field">
+                <span aria-hidden="true">$</span>
+                <InputNumber id="amount" @bind-Value="draft.Amount" step="0.01" min="0.01" max="1000000" />
+            </div>
+            <ValidationMessage For="() => draft.Amount" />
+        </div>
+        <div class="field">
+            <label for="notes">Notes <span>Optional</span></label>
+            <InputTextArea id="notes" @bind-Value="draft.Notes" rows="4" maxlength="2000" placeholder="Add context that may help later…" />
+        </div>
+        <div class="form-actions form-actions-wrap">
+            <NavLink class="text-button cancel-link" href="">Cancel</NavLink>
+            <button type="button" class="text-button" disabled="@saving" @onclick="SaveDraftAsync">Save local draft</button>
+            <button class="button button-arrow" disabled="@saving">
+                @(saving ? "Saving…" : "Save receipt") <span aria-hidden="true">↗</span>
+            </button>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    private readonly LocalReceiptDraft draft = new()
+    {
+        ServiceDate = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")
+    };
+    private IBrowserFile? file;
+    private string? error;
+    private bool saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await UserContext.InitializeAsync();
+    }
+
+    private void SelectFile(InputFileChangeEventArgs eventArgs)
+    {
+        file = eventArgs.File;
+        draft.FileName = file.Name;
+        draft.ContentType = file.ContentType;
+        draft.FileSize = file.Size;
+        error = null;
+    }
+
+    private async Task SaveOnlineAsync()
+    {
+        if (file is null)
+        {
+            error = "Choose a JPG, PNG, or PDF up to 15 MB.";
+            return;
+        }
+        if (!UserContext.HasKnownOnlineSession)
+        {
+            await SaveDraftAsync();
+            return;
+        }
+
+        saving = true;
+        error = null;
+        try
+        {
+            await Api.CreateAsync(draft, file, draft.IdempotencyKey);
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception exception)
+        {
+            error = exception is HttpRequestException
+                ? "The server is unavailable. Save a local draft and submit it after reconnecting."
+                : exception.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (file is null)
+        {
+            error = "Choose a JPG, PNG, or PDF up to 15 MB.";
+            return;
+        }
+        if (file.Size is <= 0 or > ReceiptRules.MaxUploadBytes)
+        {
+            error = "Choose a JPG, PNG, or PDF up to 15 MB.";
+            return;
+        }
+        if (!ReceiptRules.TryNormalize(draft, out _, out var errors))
+        {
+            error = string.Join(" ", errors.Values.SelectMany(value => value));
+            return;
+        }
+
+        if (UserContext.UserKey is null)
+        {
+            error = "This device has no signed-in household identity for local drafts. Reconnect and sign in once.";
+            return;
+        }
+        if (!await OfflineStore.IsOfflineEnabledAsync(UserContext.UserKey))
+        {
+            error = "Enable offline access from the receipt list before saving local drafts.";
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            await OfflineStore.SaveDraftAsync(UserContext.UserKey, draft, file);
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception exception)
+        {
+            error = $"The draft could not be stored in this browser: {exception.Message}";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

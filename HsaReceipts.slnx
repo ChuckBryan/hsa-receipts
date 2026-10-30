@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <File Path="src/HsaReceipts.AppHost/AppHost.cs" />
+    <Project Path="src/HsaReceipts.AppHost/HsaReceipts.AppHost.csproj" />
+    <Project Path="src/HsaReceipts.Client/HsaReceipts.Client.csproj" />
+    <Project Path="src/HsaReceipts.Contracts/HsaReceipts.Contracts.csproj" />
+    <Project Path="src/HsaReceipts/HsaReceipts.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/HsaReceipts.Tests/HsaReceipts.Tests.csproj" />
+  </Folder>
+</Solution>

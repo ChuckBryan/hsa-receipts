@@ -1,0 +1,62 @@
+@inherits LayoutComponentBase
+@inject UserContext UserContext
+@inject OfflineStore OfflineStore
+
+<header class="site-header">
+    <div class="header-inner">
+        <NavLink class="brand" href="" Match="NavLinkMatch.All" aria-label="Receipt Keep home">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                    <path d="M7 3h10v18l-2-1.25L13 21l-2-1.25L9 21l-2-1.25L5 21V5a2 2 0 0 1 2-2Z"/>
+                    <path d="M8.5 8h7M8.5 12h7M8.5 16h4"/>
+                </svg>
+            </span>
+            <span>Receipt Keep<small>HSA records</small></span>
+        </NavLink>
+        <div class="header-actions">
+            @if (UserContext.IsOffline)
+            {
+                <span class="connection-label connection-offline">Offline</span>
+            }
+            @if (UserContext.UserKey is not null)
+            {
+                <button class="text-button" @onclick="SignOutAsync">Sign out</button>
+            }
+        </div>
+    </div>
+</header>
+
+<main>@Body</main>
+
+<footer class="site-footer">
+    <span>Private household records</span>
+    <span class="footer-status"><i aria-hidden="true"></i> Server records stay on your NAS</span>
+</footer>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await UserContext.InitializeAsync();
+    }
+
+    private async Task SignOutAsync()
+    {
+        if (UserContext.UserKey is null)
+        {
+            return;
+        }
+
+        var drafts = await OfflineStore.GetDraftsAsync(UserContext.UserKey);
+        if (drafts.Count > 0
+            && !await OfflineStore.ConfirmAsync(
+                $"Signing out clears {drafts.Count} unsent local draft(s) from this browser. Continue?"))
+        {
+            return;
+        }
+
+        var token = await OfflineStore.GetAntiforgeryTokenAsync();
+        await OfflineStore.ClearPrivateDataAsync(UserContext.UserKey);
+        await OfflineStore.ClearLastUserKeyAsync();
+        await OfflineStore.SubmitLogoutAsync(token);
+    }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "",
+      "applicationUrl": "https://localhost:7088",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Auth__Authority": "http://localhost:5089/realms/household",
+        "Auth__ClientSecret": "development-only-secret",
+        "Auth__AllowedUsers": "developer",
+        "Auth__RequireHttpsMetadata": "false",
+        "DataPath": "../../data/development",
+        "AllowedHosts": "localhost"
+      }
+    }
+  }
+}

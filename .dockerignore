@@ -1,0 +1,8 @@
+**/bin
+**/obj
+data
+.env
+deploy
+.git
+*.zip
+test
