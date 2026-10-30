@@ -182,7 +182,7 @@ dotnet test test/HsaReceipts.Tests/HsaReceipts.Tests.csproj --configuration Rele
 python3 -m unittest discover -s test -v
 ```
 
-After all checks pass on a push to `main`, semantic-release analyzes commits since the previous release, updates the shared .NET version and [CHANGELOG.md](CHANGELOG.md), and commits those two files as `chore(release): X.Y.Z [skip ci]`. The `vX.Y.Z` tag points to that release commit, and the GitHub release contains the generated notes. Release jobs are serialized. Pull requests never publish releases, and a failed check blocks publishing.
+After all checks pass on a push to `main`, semantic-release analyzes commits since the previous release, creates a `vX.Y.Z` tag on the current `main` commit, and publishes a GitHub release with generated notes. It does not modify the shared .NET version or [CHANGELOG.md](CHANGELOG.md), or push a release commit. Release jobs are serialized. Pull requests never publish releases, and a failed check blocks publishing.
 
 Use Conventional Commit messages, including the final squash-merge commit:
 
@@ -202,17 +202,17 @@ feat: change receipt export format
 BREAKING CHANGE: exported dates now use ISO 8601.
 ```
 
-Git tags are the release-version source of truth; each new release synchronizes the shared .NET version and changelog with its tag. The version updater parses the XML and changes only the shared version value, preserving other build settings. This pipeline does not publish packages or container images or deploy the application. GitHub provides source archives automatically; no application binaries are attached. Without an existing release tag, the first release-worthy history produces `v1.0.0`. A CI-only change does not force a release, although earlier unreleased features or fixes can still trigger one.
+Git tags are the release-version source of truth. The shared .NET version and changelog are not synchronized by this pipeline; update them through a regular pull request when needed. This pipeline does not publish packages or container images or deploy the application. GitHub provides source archives automatically; no application binaries are attached. Without an existing release tag, the first release-worthy history produces `v1.0.0`. A CI-only change does not force a release, although earlier unreleased features or fixes can still trigger one.
 
-Before enabling releases, confirm the repository's default branch is `main` and inspect existing `v*` tags. Preserve valid historical release tags; do not recreate or rewrite them. Require **Build and Test** in branch protection, and ensure repository/organization Actions policy and rulesets allow the release identity to push release commits to `main` as well as create tags and releases. The workflow uses `GITHUB_TOKEN` by default, with `contents: write` only on the release job. That token does not automatically bypass required pull requests, status checks, or signed-commit rules; protected branches may need an explicitly approved release-bot exception or a GitHub App token configured in the workflow. Do not disable branch protections to make releases work. No npm token is needed. Issue/PR comments and labels are disabled in the [release configuration](.releaserc.json).
+Before enabling releases, confirm the repository's default branch is `main` and inspect existing `v*` tags. Preserve valid historical release tags; do not recreate or rewrite them. Require **Build and Test** in branch protection, and ensure the release identity can create tags and GitHub releases. Since the workflow does not push to `main`, the branch can continue requiring pull requests and status checks. The workflow uses `GITHUB_TOKEN` by default, with `contents: write` only on the release job. Do not disable branch protections to make releases work. No npm token is needed. Issue/PR comments and labels are disabled in the [release configuration](.releaserc.json).
 
 Before the first real release, preview from an up-to-date, trusted `main` checkout with full history and tags, Node.js 24.15 or newer, and an authorized `GITHUB_TOKEN` supplied through your environment:
 
 ```sh
-npx --yes --package=semantic-release@25.0.9 --package=@semantic-release/changelog@7.0.0 --package=@semantic-release/exec@7.1.0 --package=@semantic-release/git@11.0.1 semantic-release --dry-run --no-ci
+npx --yes --package=semantic-release@25.0.9 semantic-release --dry-run --no-ci
 ```
 
-The dry run verifies push permissions and reports the calculated version and notes, but skips release preparation: it does not change the XML or changelog, create a release commit, or publish a tag or release. Do not expose a release token to pull-request code. Release commits include `[skip ci]` to prevent redundant builds, and pushes/releases created with the built-in `GITHUB_TOKEN` do not trigger separate workflows; this pipeline does not depend on those events.
+The dry run validates the release configuration and reports the calculated version and notes without modifying files, pushing a tag, or publishing a release. Do not expose a release token to pull-request code. Tags and releases created with the built-in `GITHUB_TOKEN` do not trigger separate workflows; this pipeline does not depend on those events.
 
 ## Validation status and acceptance checks
 
