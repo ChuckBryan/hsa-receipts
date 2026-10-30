@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^gh api repos/ChuckBryan/hsa-receipts/branches/main/protection 2>&1 \\| Select-Object -First 20; gh ruleset list 2>&1 \\| Select-Object -First 10$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
